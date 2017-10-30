@@ -54,6 +54,11 @@ func main() {
 			Usage:  "Cattle Secret Key",
 			EnvVar: "CATTLE_SECRET_KEY",
 		},
+		cli.StringFlag{
+			Name:   "slackWebhookUrl,s",
+			Usage:  "Slack Webhook URL",
+			EnvVar: "SLACK_WEBHOOK",
+		},
 	}
 	app.Run(os.Args)
 }
@@ -68,6 +73,6 @@ func start(c *cli.Context) error {
 	if c.String("cattleSecretKey") == "" {
 		return fmt.Errorf("Cattle Secret Key required")
 	}
-	a := agent.NewAgent(c.Duration("poll-interval"), c.String("cattleURL"), c.String("cattleAccessKey"), c.String("cattleSecretKey"))
+	a := agent.NewAgent(c.Duration("poll-interval"), c.String("cattleURL"), c.String("cattleAccessKey"), c.String("cattleSecretKey"), c.String("slackWebhookUrl"))
 	return a.Start()
 }

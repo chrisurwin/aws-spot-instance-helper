@@ -11,17 +11,20 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/rancher/go-rancher/v2"
+
+	"github.com/ashwanthkumar/slack-go-webhook"
 )
 
 //Agent - Struct for Agent
 type Agent struct {
-	probePeriod   time.Duration
-	httpClient    http.Client
-	rancherClient *client.RancherClient
+	probePeriod     time.Duration
+	httpClient      http.Client
+	rancherClient   *client.RancherClient
+	slackWebhookURL string
 }
 
 //NewAgent - Function to expose NewAgent
-func NewAgent(probePeriod time.Duration, cattleURL, cattleAccessKey, cattleSecretKey string) *Agent {
+func NewAgent(probePeriod time.Duration, cattleURL, cattleAccessKey, cattleSecretKey, slackWebhookURL string) *Agent {
 
 	var opts = &client.ClientOpts{
 		Url:       cattleURL,
@@ -36,7 +39,8 @@ func NewAgent(probePeriod time.Duration, cattleURL, cattleAccessKey, cattleSecre
 		httpClient: http.Client{
 			Timeout: time.Duration(2 * time.Second),
 		},
-		rancherClient: rc,
+		rancherClient:   rc,
+		slackWebhookURL: slackWebhookURL,
 	}
 }
 
@@ -55,10 +59,30 @@ func (a *Agent) Start() error {
 				hostname, err := rancherhelpers.GetRancherMetadata("/latest/self/host/hostname")
 				if hostname != "" && err == nil {
 					log.Info("Instance is marked for termination")
-					//Evacuate Host
-					_, err := rancherhelpers.EvacuateHost(hostname, a.rancherClient)
-					if err != nil {
-						log.Error("There was a problem evacuating host...but as its marked for termination everything will get rescheduled anyway!!!")
+					//Get Host
+					hostname, err := rancherhelpers.GetRancherMetadata("/latest/self/host/hostname")
+					if hostname != "" && err == nil {
+						log.Info("Instance is marked for termination")
+
+						// Notify slack channel if configured
+						if a.slackWebhookURL != "" {
+							payload := slack.Payload{
+								Text: fmt.Sprintf("Host %s is marked for termination and will be evacuated", hostname),
+							}
+							err := slack.Send(a.slackWebhookURL, "", payload)
+							if len(err) > 0 {
+								log.Error(fmt.Sprintf("There was a problem sending Slack notification: %s\n", err))
+							}
+						}
+
+						//Evacuate Host
+						_, err := rancherhelpers.EvacuateHost(hostname, a.rancherClient)
+						if err != nil {
+							log.Error("There was a problem evacuating host...but as its marked for termination everything will get rescheduled anyway!!!")
+						} else {
+							log.Info("Host has been evacuated")
+						}
+
 					} else {
 						log.Info("Host has been evacuated")
 					}
