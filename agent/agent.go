@@ -3,7 +3,6 @@ package agent
 import (
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/chrisurwin/aws-spot-instance-helper/awshelpers"
@@ -18,8 +17,6 @@ import (
 
 //Agent - Struct for Agent
 type Agent struct {
-	sync.WaitGroup
-
 	probePeriod     time.Duration
 	httpClient      http.Client
 	rancherClient   *client.RancherClient
@@ -50,13 +47,17 @@ func NewAgent(probePeriod time.Duration, cattleURL, cattleAccessKey, cattleSecre
 //Start - Function to start agent
 func (a *Agent) Start() error {
 	go healthcheck.StartHealthcheck()
-	t := time.NewTicker(a.probePeriod)
-	for _ = range t.C {
-		for {
-			aws, err := awshelpers.GetAWSInfoBool("/latest/meta-data/", 200)
-			if aws && err == nil {
-				t, err := awshelpers.GetAWSInfoBool("/latest/meta-data/spot/termination-time", 200)
-				if t && err != nil {
+	ticker := time.NewTicker(a.probePeriod)
+	for tk := range ticker.C {
+		log.Debug("Check at ", tk)
+		aws, err := awshelpers.GetAWSInfoBool("/latest/meta-data/", 200)
+		if aws && err == nil {
+			t, err := awshelpers.GetAWSInfoBool("/latest/meta-data/spot/termination-time", 200)
+			if t && err != nil {
+				log.Info("Instance is marked for termination")
+				//Get Host
+				hostname, err := rancherhelpers.GetRancherMetadata("/latest/self/host/hostname")
+				if hostname != "" && err == nil {
 					log.Info("Instance is marked for termination")
 					//Get Host
 					hostname, err := rancherhelpers.GetRancherMetadata("/latest/self/host/hostname")
@@ -81,14 +82,16 @@ func (a *Agent) Start() error {
 						} else {
 							log.Info("Host has been evacuated")
 						}
+
 					} else {
-						return err
+						log.Info("Host has been evacuated")
 					}
+				} else {
+					return err
 				}
-			} else {
-				log.Info("Possibly not an AWS host")
 			}
-			a.Wait()
+		} else {
+			log.Info("Possibly not an AWS host")
 		}
 	}
 	return fmt.Errorf("Agent returned an error")
